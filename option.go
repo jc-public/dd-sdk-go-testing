@@ -150,3 +150,11 @@ func WithIncrementSkipFrame() Option {
 		cfg.skip = cfg.skip + 1
 	}
 }
+
+func WithTestFramework(testFramework, testType string) Option {
+	return func(cfg *config) {
+		cfg.spanOpts = append(cfg.spanOpts,
+			tracer.Tag(constants.TestFramework, testFramework),
+			tracer.Tag(constants.TestType, testType))
+	}
+}
