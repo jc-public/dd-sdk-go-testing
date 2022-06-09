@@ -71,16 +71,29 @@ func Run(m *testing.M, opts ...tracer.StartOption) int {
 	return m.Run()
 }
 
-// StartTest returns a new span with the given testing.TB interface and options. It uses
+// TB are the required methods from testing.TB that this package requires.
+//
+// NOTE: testing.TB specifically prevents external packages from implementing
+// it, which is unfriendly for this library to support other test frameworks.
+type TB interface {
+	Name() string
+	Failed() bool
+	Skipped() bool
+}
+
+// StartTest returns a new span with the given TB interface and options. It uses
 // tracer.StartSpanFromContext function to start the span with automatically detected information.
-func StartTest(tb testing.TB, opts ...Option) (context.Context, FinishFunc) {
+func StartTest(tb TB, opts ...Option) (context.Context, FinishFunc) {
 	opts = append(opts, WithIncrementSkipFrame())
 	return StartTestWithContext(context.Background(), tb, opts...)
 }
 
-// StartTestWithContext returns a new span with the given testing.TB interface and options. It uses
+// StartTestWithContext returns a new span with the given TB interface and options. It uses
 // tracer.StartSpanFromContext function to start the span with automatically detected information.
-func StartTestWithContext(ctx context.Context, tb testing.TB, opts ...Option) (context.Context, FinishFunc) {
+//
+// It will automatically add span tags for the test framework and type for testing.T and testing.B tests.
+// To add span tags for a different test framework use WithTestFramework.
+func StartTestWithContext(ctx context.Context, tb TB, opts ...Option) (context.Context, FinishFunc) {
 	cfg := new(config)
 	defaults(cfg)
 	for _, fn := range opts {
