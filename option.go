@@ -9,6 +9,7 @@ import (
 	"runtime"
 	"sync"
 
+	testingext "github.com/DataDog/dd-sdk-go-testing/ext"
 	"github.com/DataDog/dd-sdk-go-testing/internal/constants"
 	"github.com/DataDog/dd-sdk-go-testing/internal/utils"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
@@ -35,8 +36,8 @@ func defaults(cfg *config) {
 	// When StartSpanWithFinish is called directly from test function.
 	cfg.skip = 1
 	cfg.spanOpts = []ddtrace.StartSpanOption{
-		tracer.SpanType(constants.SpanTypeTest),
-		tracer.Tag(constants.SpanKind, spanKind),
+		tracer.SpanType(testingext.SpanTypeTest),
+		tracer.Tag(testingext.SpanKind, spanKind),
 		tracer.Tag(ext.ManualKeep, true),
 	}
 
@@ -119,6 +120,16 @@ func getFromCITags(key string) (string, bool) {
 	return "", false
 }
 
+// ForEachCITags will load (if necessary) and iterate through the CI tags that
+// should be added to a span for compatibility with DataDog's Continuous
+// Integration Visibility.
+//
+// See https://docs.datadoghq.com/continuous_integration/
+func ForEachCITags(itemFunc func(string, string)) {
+	ensureCITags()
+	forEachCITags(itemFunc)
+}
+
 func forEachCITags(itemFunc func(string, string)) {
 	tagsMutex.Lock()
 	defer tagsMutex.Unlock()
@@ -148,13 +159,5 @@ func WithSkipFrames(skip int) Option {
 func WithIncrementSkipFrame() Option {
 	return func(cfg *config) {
 		cfg.skip = cfg.skip + 1
-	}
-}
-
-func WithTestFramework(testFramework, testType string) Option {
-	return func(cfg *config) {
-		cfg.spanOpts = append(cfg.spanOpts,
-			tracer.Tag(constants.TestFramework, testFramework),
-			tracer.Tag(constants.TestType, testType))
 	}
 }

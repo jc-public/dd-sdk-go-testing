@@ -17,6 +17,7 @@ import (
 	"syscall"
 	"testing"
 
+	testingext "github.com/DataDog/dd-sdk-go-testing/ext"
 	"github.com/DataDog/dd-sdk-go-testing/internal/constants"
 	"github.com/DataDog/dd-sdk-go-testing/internal/utils"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
@@ -70,37 +71,16 @@ func Run(m *testing.M, opts ...tracer.StartOption) int {
 	return m.Run()
 }
 
-// TB are the required methods from testing.TB that this package requires.
-//
-// NOTE: testing.TB specifically prevents external packages from implementing
-// it, which is unfriendly for this library to support other test frameworks.
-type TB interface {
-	Name() string
-	Failed() bool
-	Skipped() bool
-}
-
-// StartTest returns a new span with the given TB interface and options. It uses
+// StartTest returns a new span with the given testing.TB interface and options. It uses
 // tracer.StartSpanFromContext function to start the span with automatically detected information.
-func StartTest(tb TB, opts ...Option) (context.Context, FinishFunc) {
+func StartTest(tb testing.TB, opts ...Option) (context.Context, FinishFunc) {
 	opts = append(opts, WithIncrementSkipFrame())
 	return StartTestWithContext(context.Background(), tb, opts...)
 }
 
-// StartTestWithContext returns a new span with the given TB interface and options. It uses
+// StartTestWithContext returns a new span with the given testing.TB interface and options. It uses
 // tracer.StartSpanFromContext function to start the span with automatically detected information.
-//
-// It will automatically add span tags for the test framework and type for testing.T and testing.B tests.
-// To add span tags for a different test framework use WithTestFramework.
-func StartTestWithContext(ctx context.Context, tb TB, opts ...Option) (context.Context, FinishFunc) {
-	// Automatically add in test framework for testing.T and testing.B
-	switch tb.(type) {
-	case *testing.T:
-		opts = append([]Option{WithTestFramework(testFramework, constants.TestTypeTest)}, opts...)
-	case *testing.B:
-		opts = append([]Option{WithTestFramework(testFramework, constants.TestTypeBenchmark)}, opts...)
-	}
-
+func StartTestWithContext(ctx context.Context, tb testing.TB, opts ...Option) (context.Context, FinishFunc) {
 	cfg := new(config)
 	defaults(cfg)
 	for _, fn := range opts {
@@ -114,20 +94,28 @@ func StartTestWithContext(ctx context.Context, tb TB, opts ...Option) (context.C
 
 	testOpts := []tracer.StartSpanOption{
 		tracer.ResourceName(fqn),
-		tracer.Tag(constants.TestName, name),
-		tracer.Tag(constants.TestSuite, suite),
+		tracer.Tag(testingext.TestName, name),
+		tracer.Tag(testingext.TestSuite, suite),
+		tracer.Tag(testingext.TestFramework, testFramework),
 		tracer.Tag(constants.Origin, constants.CIAppTestOrigin),
 	}
 
+	switch tb.(type) {
+	case *testing.T:
+		testOpts = append(testOpts, tracer.Tag(testingext.TestType, constants.TestTypeTest))
+	case *testing.B:
+		testOpts = append(testOpts, tracer.Tag(testingext.TestType, constants.TestTypeBenchmark))
+	}
+
 	cfg.spanOpts = append(testOpts, cfg.spanOpts...)
-	span, ctx := tracer.StartSpanFromContext(ctx, constants.SpanTypeTest, cfg.spanOpts...)
+	span, ctx := tracer.StartSpanFromContext(ctx, testingext.SpanTypeTest, cfg.spanOpts...)
 
 	return ctx, func() {
 		var r interface{} = nil
 
 		if r = recover(); r != nil {
 			// Panic handling
-			span.SetTag(constants.TestStatus, constants.TestStatusFail)
+			span.SetTag(testingext.TestStatus, constants.TestStatusFail)
 			span.SetTag(ext.Error, true)
 			span.SetTag(ext.ErrorMsg, fmt.Sprint(r))
 			span.SetTag(ext.ErrorStack, getStacktrace(2))
@@ -137,11 +125,11 @@ func StartTestWithContext(ctx context.Context, tb TB, opts ...Option) (context.C
 			span.SetTag(ext.Error, tb.Failed())
 
 			if tb.Failed() {
-				span.SetTag(constants.TestStatus, constants.TestStatusFail)
+				span.SetTag(testingext.TestStatus, constants.TestStatusFail)
 			} else if tb.Skipped() {
-				span.SetTag(constants.TestStatus, constants.TestStatusSkip)
+				span.SetTag(testingext.TestStatus, constants.TestStatusSkip)
 			} else {
-				span.SetTag(constants.TestStatus, constants.TestStatusPass)
+				span.SetTag(testingext.TestStatus, constants.TestStatusPass)
 			}
 		}
 
